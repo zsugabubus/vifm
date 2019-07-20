@@ -87,7 +87,7 @@ static void fill_column(view_t *view, int start_line, int top, int width,
 static void calculate_table_conf(view_t *view, size_t *count, size_t *width);
 static int calculate_number_width(const view_t *view, int list_length,
 		int width);
-static int count_digits(int num);
+static int count_digits(unsigned num);
 static int calculate_top_position(view_t *view, int top);
 static int get_line_color(const view_t *view, const dir_entry_t *entry);
 static size_t calculate_print_width(const view_t *view, int i,
@@ -567,27 +567,27 @@ calculate_number_width(const view_t *view, int list_length, int width)
 /* Counts number of digits in a number assuming that zero takes on digit.
  * Returns the count. */
 static int
-count_digits(int num)
+count_digits(unsigned num)
 {
-#define TEST_DIGITS(n) \
-	if(num < (int)10e##n) \
+#define TEST_DIGIT_COUNT(c) \
+	if(num < (unsigned)1e##c) \
 	{ \
-		return n; \
+		return c; \
 	}
 
 	/* At least twice faster than naive method. */
-	TEST_DIGITS(1);
-	TEST_DIGITS(2);
-	TEST_DIGITS(3);
-	TEST_DIGITS(4);
-	TEST_DIGITS(5);
-	TEST_DIGITS(6);
-	TEST_DIGITS(7);
-	TEST_DIGITS(8);
-	TEST_DIGITS(9);
+	TEST_DIGIT_COUNT(1);
+	TEST_DIGIT_COUNT(2);
+	TEST_DIGIT_COUNT(3);
+	TEST_DIGIT_COUNT(4);
+	TEST_DIGIT_COUNT(5);
+	TEST_DIGIT_COUNT(6);
+	TEST_DIGIT_COUNT(7);
+	TEST_DIGIT_COUNT(8);
+	TEST_DIGIT_COUNT(9);
 	return 10;
 
-#undef TEST
+#undef TEST_DIGIT_COUNT
 }
 
 /* Calculates top position basing on window and list size and trying to show as
