@@ -3188,7 +3188,8 @@ flist_list_in(view_t *view, const char path[], int only_dirs,
 	}
 	free_string_array(list, len);
 
-	if(can_include_parent && cfg_parent_dir_is_visible(is_root_dir(path)))
+	if((can_include_parent && cfg_parent_dir_is_visible(is_root_dir(path))) ||
+				siblings.nentries == 0)
 	{
 		char *const full_path = format_str("%s/..", path);
 		entry_list_add(view, &siblings.entries, &siblings.nentries, full_path);

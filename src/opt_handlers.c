@@ -375,8 +375,9 @@ static const char *tabscope_vals[][2] = {
 
 /* Possible flags of 'tuioptions' and their count. */
 static const char *tuioptions_vals[][2] = {
-	{ "psu", "all tuioptions values" },
+	{ "pcsu", "all tuioptions values" },
 	{ "p",   "use padding in views and preview" },
+	{ "c",   "use padding between columns" },
 	{ "s",   "display side borders" },
 	{ "u",   "use Unicode characters in the TUI" },
 };
@@ -1206,8 +1207,9 @@ static void
 init_tuioptions(optval_t *val)
 {
 	static char buf[32];
-	snprintf(buf, sizeof(buf), "%s%s%s",
+	snprintf(buf, sizeof(buf), "%s%s%s%s",
 			cfg.extra_padding ? "p" : "",
+			cfg.inner_padding ? "c" : "",
 			cfg.side_borders_visible ? "s" : "",
 			cfg.use_unicode_characters ? "u" : "");
 	val->str_val = buf;
@@ -3335,6 +3337,7 @@ tuioptions_handler(OPT_OP op, optval_t val)
 
 	/* Turn all flags off. */
 	cfg.extra_padding = 0;
+	cfg.inner_padding = 0;
 	cfg.side_borders_visible = 0;
 	cfg.use_unicode_characters = 0;
 
@@ -3346,6 +3349,9 @@ tuioptions_handler(OPT_OP op, optval_t val)
 		{
 			case 'p':
 				cfg.extra_padding = 1;
+				break;
+			case 'c':
+				cfg.inner_padding = 1;
 				break;
 			case 's':
 				cfg.side_borders_visible = 1;

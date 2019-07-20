@@ -558,16 +558,25 @@ TEST(tuioptions)
 {
 	assert_success(vle_opts_set("tuioptions=", OPT_GLOBAL));
 	assert_false(cfg.extra_padding);
+	assert_false(cfg.inner_padding);
+	assert_false(cfg.side_borders_visible);
+	assert_false(cfg.use_unicode_characters);
+
+	assert_success(vle_opts_set("tuioptions+=c", OPT_GLOBAL));
+	assert_false(cfg.extra_padding);
+	assert_true(cfg.inner_padding);
 	assert_false(cfg.side_borders_visible);
 	assert_false(cfg.use_unicode_characters);
 
 	assert_success(vle_opts_set("tuioptions=pu", OPT_GLOBAL));
 	assert_true(cfg.extra_padding);
+	assert_false(cfg.inner_padding);
 	assert_false(cfg.side_borders_visible);
 	assert_true(cfg.use_unicode_characters);
 
 	assert_success(vle_opts_set("tuioptions+=s", OPT_GLOBAL));
 	assert_true(cfg.extra_padding);
+	assert_false(cfg.inner_padding);
 	assert_true(cfg.side_borders_visible);
 	assert_true(cfg.use_unicode_characters);
 }

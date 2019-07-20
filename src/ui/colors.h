@@ -67,7 +67,10 @@ enum
 	USER8_COLOR,        /* User color #8. */
 	USER9_COLOR,        /* User color #9. */
 	OTHER_WIN_COLOR,    /* Background and highlighting for inactive pane. */
-	MAXNUM_COLOR        /* Number of elements of a color scheme. */
+	LINE_NUM_COLOR,     /* Selected item. */
+	OTHER_LINE_NUM_COLOR, /* Selected item. */
+	SEL_LINE_NUM_COLOR,    /* Selected item. */
+	MAXNUM_COLOR,       /* Number of elements of a color scheme. */
 };
 
 #endif /* VIFM__UI__COLORS_H__ */

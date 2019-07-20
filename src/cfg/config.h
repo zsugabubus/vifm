@@ -263,6 +263,10 @@ typedef struct config_t
 	 * for a quick view. */
 	int extra_padding;
 
+	/* Whether there should be reserved single character width space between
+	 * columns of miller view. */
+	int inner_padding;
+
 	/* Whether side borders are visible (separator in the middle isn't
 	 * affected). */
 	int side_borders_visible;

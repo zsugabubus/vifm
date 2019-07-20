@@ -911,8 +911,9 @@ cfg_is_word_wchar(wchar_t c)
 int
 cfg_parent_dir_is_visible(int in_root)
 {
-	return ((in_root && (cfg.dot_dirs & DD_ROOT_PARENT)) ||
-			(!in_root && (cfg.dot_dirs & DD_NONROOT_PARENT)));
+	return in_root
+	     ? (cfg.dot_dirs & DD_ROOT_PARENT)
+	     : (cfg.dot_dirs & DD_NONROOT_PARENT);
 }
 
 int

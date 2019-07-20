@@ -64,12 +64,12 @@ typedef struct
 	int line_pos;       /* File position in the file list (the view).  Can be -1
 	                     * for filler (entry should still be supplied though). */
 	int line_hi_group;  /* Line highlight (to avoid per-column calculation). */
-	int current_pos;    /* Position of entry selected with the cursor. */
+	int curr_pos;       /* Position of entry selected with the cursor. */
 	int total_width;    /* Total width available for drawing. */
 	int number_width;   /* Whether to draw line numbers. */
 
-	size_t current_line;  /* Line of the cell within the view window. */
-	size_t column_offset; /* Offset in characters of the column. */
+	size_t curr_line;   /* Line of the cell within the view window. */
+	size_t col_offset;  /* Offset in characters of the column. */
 
 	size_t *prefix_len; /* Data prefix length (should be drawn in neutral color).
 	                     * A pointer to allow changing value in const struct.
@@ -270,7 +270,7 @@ draw_dir_list(view_t *view)
 void
 draw_dir_list_only(view_t *view)
 {
-	int x, cell;
+	int pos, cell;
 	size_t col_width, col_count;
 	int visible_cells;
 
@@ -284,10 +284,10 @@ draw_dir_list_only(view_t *view)
 	ui_view_title_update(view);
 
 	/* This is needed for reloading a list that has had files deleted. */
-	while(view->list_rows - view->list_pos <= 0)
+	if(view->list_pos >= view->list_rows)
 	{
-		--view->list_pos;
-		--view->curr_line;
+		view->curr_line -= view->list_pos - (view->list_rows - 1);
+		view->list_pos = view->list_rows - 1;
 	}
 
 	view->top_line = calculate_top_position(view, view->top_line);
@@ -304,15 +304,15 @@ draw_dir_list_only(view_t *view)
 		visible_cells += view->window_rows;
 	}
 
-	for(x = view->top_line, cell = 0;
-			x < view->list_rows && cell < visible_cells;
-			++x, ++cell)
+	for(pos = view->top_line, cell = 0;
+			pos < view->list_rows && cell < visible_cells;
+			++pos, ++cell)
 	{
 		column_data_t cdt = {
 			.view = view,
-			.entry = &view->dir_entry[x],
-			.line_pos = x,
-			.current_pos = view->list_pos,
+			.entry = &view->dir_entry[pos],
+			.line_pos = pos,
+			.curr_pos = view->list_pos,
 		};
 
 		compute_and_draw_cell(&cdt, cell, col_width);
@@ -342,7 +342,8 @@ draw_left_column(view_t *view)
 
 	int number_width = 0;
 	int lcol_width = ui_view_left_reserved(view)
-	               - (cfg.extra_padding ? 1 : 0) - 1;
+	               - (cfg.extra_padding ? 1 : 0)
+	               - (cfg.inner_padding ? 1 : 0);
 	if(lcol_width <= 0)
 	{
 		flist_free_cache(view, &view->left_column);
@@ -373,7 +374,7 @@ draw_right_column(view_t *view)
 	const int padding = (cfg.extra_padding ? 1 : 0);
 	const int offset = ui_view_left_reserved(view) + padding
 	                 + ui_view_available_width(view) + padding
-	                 + 1;
+	                 + (cfg.inner_padding ? 1 : 0);
 
 	const int rcol_width = ui_view_right_reserved(view) - padding - 1;
 	if(rcol_width <= 0)
@@ -421,12 +422,12 @@ print_column(view_t *view, entries_t entries, const char current[],
 {
 	columns_t *const columns = get_name_column(0);
 	const int scroll_offset = fpos_get_offset(view);
-	int top, pos;
-	int i;
+	int top, curr_pos;
+	int pos;
 
 	sort_entries(view, entries);
 
-	pos = flist_hist_find(view, entries, path, &top);
+	curr_pos = flist_hist_find(view, entries, path, &top);
 
 	/* Use hint if provided. */
 	if(current != NULL)
@@ -435,64 +436,65 @@ print_column(view_t *view, entries_t entries, const char current[],
 		entry = entry_from_path(view, entries.entries, entries.nentries, current);
 		if(entry != NULL)
 		{
-			pos = entry - entries.entries;
+			curr_pos = entry - entries.entries;
 		}
 	}
 
 	/* Make sure that current element is visible on the screen. */
-	if(pos < top + scroll_offset)
+	if(curr_pos < top + scroll_offset)
 	{
-		top = pos - scroll_offset;
+		top = curr_pos - scroll_offset;
 	}
-	else if(pos >= top + view->window_rows - scroll_offset)
+	else if(curr_pos >= top + view->window_rows - scroll_offset)
 	{
-		top = pos - (view->window_rows - scroll_offset - 1);
+		top = curr_pos - (view->window_rows - scroll_offset - 1);
 	}
 	/* Ensure that top position is correct and we fill all lines for which we have
 	 * files. */
+	if(entries.nentries - top < view->window_rows)
+	{
+		top = entries.nentries - view->window_rows;
+	}
+
 	if(top < 0)
 	{
 		top = 0;
-	}
-	if(entries.nentries - top < view->window_rows)
-	{
-		top = MAX(0, entries.nentries - view->window_rows);
 	}
 
 	if(current != NULL)
 	{
 		/* We will display cursor on this entry and want history to be aware of
 		 * it. */
-		flist_hist_update(view, path, get_last_path_component(current), pos - top);
+		flist_hist_update(view, path, get_last_path_component(current), curr_pos - top);
 	}
 
-	for(i = top; i < entries.nentries && i - top < view->window_rows; ++i)
+	for(pos = top; pos < entries.nentries && pos - top < view->window_rows; ++pos)
 	{
 		size_t prefix_len = 0U;
 		const column_data_t cdt = {
 			.view = view,
-			.entry = &entries.entries[i],
-			.line_pos = i,
-			.line_hi_group = get_line_color(view, &entries.entries[i]),
-			.current_pos = pos,
+			.entry = &entries.entries[pos],
+			.line_pos = pos,
+			.line_hi_group = get_line_color(view, &entries.entries[pos]),
+			.curr_pos = curr_pos,
 			.total_width = number_width + width,
 			.number_width = number_width,
-			.current_line = i - top,
-			.column_offset = offset,
+			.curr_line = pos - top,
+			.col_offset = offset,
 			.prefix_len = &prefix_len,
 		};
 
 		draw_cell(columns, &cdt, width, width - 1);
 	}
 
-	fill_column(view, i, top, number_width + width, offset);
+	fill_column(view, pos, top, number_width + width, offset);
 }
 
 /* Fills column to the bottom to clear it from previous content. */
 static void
 fill_column(view_t *view, int start_line, int top, int width, int offset)
 {
-	char filler[width + (cfg.extra_padding ? 1 : 0) + 1];
+	char filler[width + (cfg.extra_padding ? 1 : 0) + 1/*nul*/];
 	memset(filler, ' ', sizeof(filler) - 1U);
 	filler[sizeof(filler) - 1U] = '\0';
 
@@ -503,8 +505,8 @@ fill_column(view_t *view, int start_line, int top, int width, int offset)
 		.type = FT_UNK,
 	};
 
-	int i;
-	for(i = start_line; i - top < view->window_rows; ++i)
+	int pos;
+	for(pos = start_line; pos - top < view->window_rows; ++pos)
 	{
 		size_t prefix_len = 0U;
 		const column_data_t cdt = {
@@ -512,13 +514,13 @@ fill_column(view_t *view, int start_line, int top, int width, int offset)
 			.entry = &non_entry,
 			.line_pos = -1,
 			.total_width = width,
-			.current_pos = -1,
-			.current_line = i - top,
-			.column_offset = offset,
+			.curr_pos = -1,
+			.curr_line = pos - top,
+			.col_offset = offset,
 			.prefix_len = &prefix_len,
 		};
 
-		column_line_print(&cdt, FILL_COLUMN_ID, filler, cfg.extra_padding ? -1 : 0,
+		column_line_print(&cdt, FILL_COLUMN_ID, filler, (cfg.extra_padding ? -1 : 0),
 				AT_LEFT, filler);
 	}
 }
@@ -555,8 +557,8 @@ calculate_number_width(const view_t *view, int list_length, int width)
 	if(ui_view_displays_numbers(view))
 	{
 		const int digit_count = count_digits(list_length);
-		const int min = view->num_width;
-		return MIN(MAX(1 + digit_count, min), width);
+		const int min = view->num_width; /* Includes space on the right. */
+		return MIN(MAX(digit_count, min - 1/*space*/), width);
 	}
 
 	return 0;
@@ -567,14 +569,25 @@ calculate_number_width(const view_t *view, int list_length, int width)
 static int
 count_digits(int num)
 {
-	int count = 0;
-	do
-	{
-		count++;
-		num /= 10;
+#define TEST_DIGITS(n) \
+	if(num < (int)10e##n) \
+	{ \
+		return n; \
 	}
-	while(num != 0);
-	return count;
+
+	/* At least twice faster than naive method. */
+	TEST_DIGITS(1);
+	TEST_DIGITS(2);
+	TEST_DIGITS(3);
+	TEST_DIGITS(4);
+	TEST_DIGITS(5);
+	TEST_DIGITS(6);
+	TEST_DIGITS(7);
+	TEST_DIGITS(8);
+	TEST_DIGITS(9);
+	return 10;
+
+#undef TEST
 }
 
 /* Calculates top position basing on window and list size and trying to show as
@@ -668,7 +681,7 @@ draw_cell(columns_t *columns, const column_data_t *cdt, size_t col_width,
 		size_t print_width)
 {
 	size_t width_left = cdt->is_main
-	                  ? ui_view_available_width(cdt->view) - (cdt->column_offset -
+	                  ? ui_view_available_width(cdt->view) - (cdt->col_offset -
 	                    ui_view_left_reserved(cdt->view))
 	                  : col_width + 1U;
 
@@ -781,6 +794,7 @@ consider_scroll_bind(view_t *view)
 		{
 			(void)fpos_scroll_down(other, 0);
 		}
+
 		if(can_scroll_down(other))
 		{
 			(void)fpos_scroll_up(other, 0);
@@ -907,13 +921,13 @@ redraw_cell(view_t *view, int top, int cursor, int is_current)
 		.view = view,
 		.entry = &view->dir_entry[pos],
 		.line_pos = pos,
-		.current_pos = is_current ? view->list_pos : -1,
+		.curr_pos = is_current ? view->list_pos : -1,
 	};
 	compute_and_draw_cell(&cdt, cursor, col_width);
 }
 
 /* Fills in fields of cdt based on passed in arguments and
- * view/entry/line_pos/current_pos fields of cdt.  Then draws the cell. */
+ * view/entry/line_pos/curr_pos fields of cdt.  Then draws the cell. */
 static void
 compute_and_draw_cell(column_data_t *cdt, int cell, size_t col_width)
 {
@@ -922,9 +936,9 @@ compute_and_draw_cell(column_data_t *cdt, int cell, size_t col_width)
 	const size_t print_width = calculate_print_width(cdt->view, cdt->line_pos,
 			col_width);
 
-	cdt->current_line = fpos_get_line(cdt->view, cell);
-	cdt->column_offset = ui_view_left_reserved(cdt->view)
-	                   + fpos_get_col(cdt->view, cell)*col_width;
+	cdt->curr_line = fpos_get_line(cdt->view, cell);
+	cdt->col_offset = ui_view_left_reserved(cdt->view)
+	                + fpos_get_col(cdt->view, cell)*col_width;
 	cdt->line_hi_group = get_line_color(cdt->view, cdt->entry);
 	cdt->number_width = cdt->view->real_num_width;
 	cdt->total_width = ui_view_available_width(cdt->view);
@@ -1070,7 +1084,7 @@ column_line_print(const void *data, int column_id, const char buf[],
 	dir_entry_t *entry = cdt->entry;
 
 	const int numbers_visible = (offset == 0 && cdt->number_width > 0);
-	const int padding = (cfg.extra_padding != 0);
+	const int padding = (cfg.extra_padding != 0 || cdt->number_width > 0);
 
 	const int primary = column_id == SK_BY_NAME
 	                 || column_id == SK_BY_INAME
@@ -1095,11 +1109,11 @@ column_line_print(const void *data, int column_id, const char buf[],
 	}
 
 	prefix_len = padding + cdt->number_width + extra_prefix;
-	final_offset = prefix_len + cdt->column_offset + offset;
+	final_offset = prefix_len + cdt->col_offset + offset;
 
 	if(numbers_visible)
 	{
-		const int column = final_offset - extra_prefix - cdt->number_width;
+		const int column = cdt->col_offset;
 		draw_line_number(cdt, column);
 	}
 
@@ -1111,12 +1125,12 @@ column_line_print(const void *data, int column_id, const char buf[],
 		buf += extra_prefix;
 		full_column += extra_prefix;
 
-		checked_wmove(view->win, cdt->current_line, final_offset - extra_prefix);
+		checked_wmove(view->win, cdt->curr_line, final_offset - extra_prefix);
 		cchar_t cch = prepare_col_color(view, 0, cdt);
 		wprinta(view->win, print_buf, &cch, 0);
 	}
 
-	checked_wmove(view->win, cdt->current_line, final_offset);
+	checked_wmove(view->win, cdt->curr_line, final_offset);
 
 	if(fentry_is_fake(entry))
 	{
@@ -1127,7 +1141,7 @@ column_line_print(const void *data, int column_id, const char buf[],
 	{
 		strcpy(print_buf, buf);
 	}
-	reserved_width = cfg.extra_padding ? (column_id != FILL_COLUMN_ID) : 0;
+	reserved_width = cfg.extra_padding || cdt->number_width > 0 ? (column_id != FILL_COLUMN_ID) : 0;
 	width_left = padding + cdt->total_width - reserved_width - offset;
 	trim_pos = utf8_nstrsnlen(buf, width_left);
 	if(trim_pos < sizeof(print_buf))
@@ -1139,7 +1153,7 @@ column_line_print(const void *data, int column_id, const char buf[],
 	if(primary && view->matches != 0 && entry->search_match)
 	{
 		highlight_search(view, entry, full_column, print_buf, trim_pos, align,
-				cdt->current_line, final_offset, &line_attrs);
+				cdt->curr_line, final_offset, &line_attrs);
 	}
 }
 
@@ -1149,17 +1163,17 @@ draw_line_number(const column_data_t *cdt, int column)
 {
 	view_t *const view = cdt->view;
 
-	const int mixed = cdt->line_pos == cdt->current_pos
+	const int mixed = cdt->line_pos == cdt->curr_pos
 	               && view->num_type == NT_MIX;
 	const char *const format = mixed ? "%-*d " : "%*d ";
 	const int num = (view->num_type & NT_REL) && !mixed
-	              ? abs(cdt->line_pos - cdt->current_pos)
+	              ? abs(cdt->line_pos - cdt->curr_pos)
 	              : cdt->line_pos + 1;
 
-	char num_str[cdt->number_width + 1];
-	snprintf(num_str, sizeof(num_str), format, cdt->number_width - 1, num);
+	char num_str[cdt->number_width/*number*/ + 1/*space*/ + 1/*nul*/];
+	sprintf(num_str, format, cdt->number_width, num);
 
-	checked_wmove(view->win, cdt->current_line, column);
+	checked_wmove(view->win, cdt->curr_line, column);
 	cchar_t cch = prepare_col_color(view, 0, cdt);
 	wprinta(view->win, num_str, &cch, 0);
 }
@@ -1266,11 +1280,11 @@ prepare_col_color(const view_t *view, int primary, const column_data_t *cdt)
 	{
 		/* File-specific highlight affects only primary field for non-current lines
 		 * and whole line for the current line. */
-		const int with_line_hi = (primary || cdt->line_pos == cdt->current_pos);
+		const int with_line_hi = (primary || cdt->line_pos == cdt->curr_pos);
 		const int line_color = with_line_hi ? cdt->line_hi_group : -1;
 		mix_in_common_colors(&col, view, cdt->entry, line_color);
 
-		if(cdt->line_pos == cdt->current_pos)
+		if(cdt->line_pos == cdt->curr_pos)
 		{
 			int color = (view == curr_view || !cdt->is_main) ? CURR_LINE_COLOR
 			                                                 : OTHER_LINE_COLOR;
@@ -1450,8 +1464,7 @@ format_size(int id, const void *data, size_t buf_len, char buf[])
 		size = cdt->entry->size;
 	}
 
-	str[0] = '\0';
-	friendly_size_notation(size, sizeof(str), str);
+	(void)friendly_size_notation(size, sizeof(str), str);
 	snprintf(buf, buf_len + 1, " %s", str);
 }
 
@@ -1868,7 +1881,7 @@ static void
 position_hardware_cursor(view_t *view)
 {
 	size_t col_width, col_count;
-	int current_line, column_offset;
+	int curr_line, col_offset;
 	char buf[view->window_cols + 1];
 
 	size_t prefix_len = 0U;
@@ -1879,13 +1892,16 @@ position_hardware_cursor(view_t *view)
 	};
 
 	calculate_table_conf(view, &col_count, &col_width);
-	current_line = view->curr_line/col_count;
-	column_offset = ui_view_left_reserved(view)
-	              + (view->curr_line%col_count)*col_width;
+	curr_line = view->curr_line/col_count;
+	col_offset = ui_view_left_reserved(view)
+	           + (view->curr_line%col_count)*col_width;
 	format_name(SK_BY_NAME, &cdt, sizeof(buf) - 1U, buf);
 
-	checked_wmove(view->win, current_line,
-			(cfg.extra_padding != 0) + column_offset + prefix_len);
+	checked_wmove(view->win, curr_line,
+			col_offset + prefix_len +
+			(view->real_num_width > 0
+					? view->real_num_width + 1
+					: cfg.extra_padding ? 1 : 0));
 }
 
 /* Returns non-zero if redraw is needed. */
@@ -1922,17 +1938,17 @@ move_curr_line(view_t *view)
 	else if(pos > last)
 	{
 		scroll_down(view, pos - last);
-		redraw++;
+		redraw = 1;
 	}
 	else if(pos < view->top_line)
 	{
 		scroll_up(view, view->top_line - pos);
-		redraw++;
+		redraw = 1;
 	}
 
 	if(consider_scroll_offset(view))
 	{
-		redraw++;
+		redraw = 1;
 	}
 
 	calculate_table_conf(view, &col_count, &col_width);
@@ -1940,7 +1956,7 @@ move_curr_line(view_t *view)
 	columns = get_view_columns(view, 0);
 	if(columns != NULL && !columns_matches_width(columns, col_width))
 	{
-		redraw++;
+		redraw = 1;
 	}
 
 	return redraw != 0 || (view->num_type & NT_REL);
