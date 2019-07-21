@@ -108,7 +108,7 @@ static void draw_line_number(const column_data_t *cdt, int column);
 static void highlight_search(view_t *view, dir_entry_t *entry,
 		const char full_column[], char buf[], size_t buf_len, AlignType align,
 		int line, int col, const cchar_t *line_attrs);
-static cchar_t prepare_col_color(const view_t *view, int primary,
+static cchar_t prepare_column_color(const view_t *view, int column_id,
 		const column_data_t *cdt);
 static void mix_in_common_colors(col_attr_t *col, const view_t *view,
 		dir_entry_t *entry, int line_color);
@@ -340,7 +340,7 @@ draw_left_column(view_t *view)
 	char path[PATH_MAX + 1];
 	const char *const dir = flist_get_dir(view);
 
-	int number_width = 0;
+	int number_width;
 	int lcol_width = ui_view_left_reserved(view)
 	               - (cfg.extra_padding ? 1 : 0)
 	               - (cfg.inner_padding ? 1 : 0);
@@ -859,8 +859,11 @@ fview_draw_inactive_cursor(view_t *view)
 		redraw_cell(view, view->top_line, view->curr_line, 0);
 	}
 	redraw_cell(view, view->top_line, view->curr_line, 1);
+	/* FIXME(zsugabubus): It just works. */
+	draw_left_column(view);
+	draw_right_column(view);
 
-	if(!cfg.extra_padding)
+	if(!(cfg.extra_padding || view->real_num_width > 0))
 	{
 		return;
 	}
@@ -1090,7 +1093,7 @@ column_line_print(const void *data, int column_id, const char buf[],
 	                 || column_id == SK_BY_INAME
 	                 || column_id == SK_BY_ROOT
 	                 || column_id == SK_BY_FILEROOT;
-	const cchar_t line_attrs = prepare_col_color(view, primary, cdt);
+	const cchar_t line_attrs = prepare_column_color(view, column_id, cdt);
 
 	size_t extra_prefix = primary ? *cdt->prefix_len : 0U;
 
@@ -1117,7 +1120,7 @@ column_line_print(const void *data, int column_id, const char buf[],
 		draw_line_number(cdt, column);
 	}
 
-	if(extra_prefix != 0U)
+	if(extra_prefix > 0)
 	{
 		/* Copy prefix part into working buffer. */
 		strncpy(print_buf, buf, extra_prefix);
@@ -1126,7 +1129,7 @@ column_line_print(const void *data, int column_id, const char buf[],
 		full_column += extra_prefix;
 
 		checked_wmove(view->win, cdt->curr_line, final_offset - extra_prefix);
-		cchar_t cch = prepare_col_color(view, 0, cdt);
+		cchar_t cch = prepare_column_color(view, 0, cdt);
 		wprinta(view->win, print_buf, &cch, 0);
 	}
 
@@ -1141,7 +1144,7 @@ column_line_print(const void *data, int column_id, const char buf[],
 	{
 		strcpy(print_buf, buf);
 	}
-	reserved_width = cfg.extra_padding || cdt->number_width > 0 ? (column_id != FILL_COLUMN_ID) : 0;
+	reserved_width = (cfg.extra_padding || cdt->number_width > 0) ? (column_id != FILL_COLUMN_ID) : 0;
 	width_left = padding + cdt->total_width - reserved_width - offset;
 	trim_pos = utf8_nstrsnlen(buf, width_left);
 	if(trim_pos < sizeof(print_buf))
@@ -1174,7 +1177,7 @@ draw_line_number(const column_data_t *cdt, int column)
 	sprintf(num_str, format, cdt->number_width, num);
 
 	checked_wmove(view->win, cdt->curr_line, column);
-	cchar_t cch = prepare_col_color(view, 0, cdt);
+	cchar_t cch = prepare_column_color(view, SK_BY_NONE, cdt);
 	wprinta(view->win, num_str, &cch, 0);
 }
 
@@ -1266,7 +1269,7 @@ highlight_search(view_t *view, dir_entry_t *entry, const char full_column[],
 /* Calculate color attributes for a view column.  Returns attributes that can be
  * used for drawing on a window. */
 static cchar_t
-prepare_col_color(const view_t *view, int primary, const column_data_t *cdt)
+prepare_column_color(const view_t *view, int column_id, const column_data_t *cdt)
 {
 	const col_scheme_t *const cs = ui_view_get_cs(view);
 	col_attr_t col = ui_get_win_color(view, cs);
@@ -1280,15 +1283,48 @@ prepare_col_color(const view_t *view, int primary, const column_data_t *cdt)
 	{
 		/* File-specific highlight affects only primary field for non-current lines
 		 * and whole line for the current line. */
+		const int primary = column_id == SK_BY_NAME
+		                 || column_id == SK_BY_INAME
+		                 || column_id == SK_BY_ROOT
+		                 || column_id == SK_BY_FILEROOT;
 		const int with_line_hi = (primary || cdt->line_pos == cdt->curr_pos);
 		const int line_color = with_line_hi ? cdt->line_hi_group : -1;
 		mix_in_common_colors(&col, view, cdt->entry, line_color);
 
-		if(cdt->line_pos == cdt->curr_pos)
+		switch(column_id)
 		{
-			int color = (view == curr_view || !cdt->is_main) ? CURR_LINE_COLOR
-			                                                 : OTHER_LINE_COLOR;
-			cs_mix_colors(&col, &cs->color[color]);
+			int color;
+			case SK_BY_NONE:;
+				int num_colors[2][2][2][2] = {
+					/*        { { Default,             Selected            }, { Cursor,          Cursor|Selected } } */
+					/*Active view.*/{
+						/*Main*/{ { NUM_COLOR,           SEL_NUM_COLOR       }, { CURR_NUM_COLOR,  CURR_NUM_COLOR  } },
+						/*Aux */{ { AUX_WIN_NUM_COLOR,   AUX_WIN_NUM_COLOR   }, { AUX_NUM_COLOR,   AUX_NUM_COLOR   } },
+					},
+					/*Inactive view.*/{
+						/*Main*/{ { OTHER_WIN_NUM_COLOR, OTHER_WIN_NUM_COLOR }, { OTHER_NUM_COLOR, OTHER_NUM_COLOR } },
+						/*Aux */{ { OTHER_WIN_NUM_COLOR, OTHER_WIN_NUM_COLOR }, { OTHER_NUM_COLOR, OTHER_NUM_COLOR } },
+					}
+					/* NOTE: Inactive views cannot have selections. */
+					/* NOTE: "Cursor|Selected" should be identical to "Cursor". */
+				};
+
+				color = num_colors[view == curr_view              ? 0 : 1]
+				                  [cdt->is_main                   ? 0 : 1]
+				                  [cdt->line_pos == cdt->curr_pos ? 1 : 0]
+				                  [cdt->entry->selected           ? 1 : 0];
+				cs_mix_colors(&col, &cs->color[color]);
+				break;
+
+			default:
+				if(cdt->line_pos == cdt->curr_pos)
+				{
+					color = (view == curr_view) ? cdt->is_main ? CURR_LINE_COLOR
+					                                               : ACTIVE_LINE_COLOR
+					                                : OTHER_LINE_COLOR;
+					cs_mix_colors(&col, &cs->color[color]);
+				}
+				break;
 		}
 	}
 

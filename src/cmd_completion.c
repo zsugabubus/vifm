@@ -698,6 +698,7 @@ complete_highlight_arg(const char *str)
 				{ "inverse",   "reversed colors" },
 				{ "standout",  "like bold or similar to it" },
 				{ "italic",    "on unsupported systems becomes reverse" },
+				{ "default",   "default attributes" },
 				{ "none",      "no attributes" },
 			};
 

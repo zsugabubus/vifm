@@ -204,7 +204,7 @@ static int parse_file_highlight(const cmd_info_t *cmd_info,
 static int try_parse_color_name_value(const char str[], int fg,
 		col_attr_t *color);
 static int parse_color_name_value(const char str[], int fg, int *attr);
-static int get_attrs(const char *text);
+static int get_attrs(const char *text, int *attrs);
 static int history_cmd(const cmd_info_t *cmd_info);
 static int histnext_cmd(const cmd_info_t *cmd_info);
 static int histprev_cmd(const cmd_info_t *cmd_info);
@@ -2849,17 +2849,23 @@ parse_file_highlight(const cmd_info_t *cmd_info, col_attr_t *color)
 		else if(strcmp(arg_name, "cterm") == 0)
 		{
 			int attrs;
-			if((attrs = get_attrs(equal + 1)) == -1)
+			if(get_attrs(equal + 1, &attrs) == -1)
 			{
 				ui_sb_errf("Illegal argument: %s", equal + 1);
 				return 1;
 			}
-			color->attr = attrs;
-			if(curr_stats.exec_env_type == EET_LINUX_NATIVE &&
-					(attrs & (A_BOLD | A_REVERSE)) == (A_BOLD | A_REVERSE))
+
+			/* XXX: Should we care about it? */
+			if(attrs != -1)
 			{
-				color->attr |= A_BLINK;
+				if(curr_stats.exec_env_type == EET_LINUX_NATIVE &&
+						(attrs & (A_BOLD | A_REVERSE)) == (A_BOLD | A_REVERSE))
+				{
+					attrs |= A_BLINK;
+				}
 			}
+
+			color->attr = attrs;
 		}
 		else
 		{
@@ -2948,7 +2954,7 @@ parse_color_name_value(const char str[], int fg, int *attr)
 }
 
 static int
-get_attrs(const char *text)
+get_attrs(const char *text, int *attrs)
 {
 #ifdef HAVE_A_ITALIC_DECL
 	const int italic_attr = A_ITALIC;
@@ -2957,7 +2963,7 @@ get_attrs(const char *text)
 	const int italic_attr = A_REVERSE;
 #endif
 
-	int result = 0;
+	*attrs = 0;
 	while(*text != '\0')
 	{
 		const char *const p = until_first(text, ',');
@@ -2965,25 +2971,27 @@ get_attrs(const char *text)
 
 		copy_str(buf, p - text + 1, text);
 		if(strcasecmp(buf, "bold") == 0)
-			result |= A_BOLD;
+			*attrs |= A_BOLD;
 		else if(strcasecmp(buf, "underline") == 0)
-			result |= A_UNDERLINE;
+			*attrs |= A_UNDERLINE;
 		else if(strcasecmp(buf, "reverse") == 0)
-			result |= A_REVERSE;
+			*attrs |= A_REVERSE;
 		else if(strcasecmp(buf, "inverse") == 0)
-			result |= A_REVERSE;
+			*attrs |= A_REVERSE;
 		else if(strcasecmp(buf, "standout") == 0)
-			result |= A_STANDOUT;
+			*attrs |= A_STANDOUT;
 		else if(strcasecmp(buf, "italic") == 0)
-			result |= italic_attr;
+			*attrs |= italic_attr;
+		else if(strcasecmp(buf, "default") == 0)
+			*attrs = -1;
 		else if(strcasecmp(buf, "none") == 0)
-			result = 0;
+			*attrs = 0;
 		else
 			return -1;
 
 		text = (*p == '\0') ? p : p + 1;
 	}
-	return result;
+	return 0;
 }
 
 static int

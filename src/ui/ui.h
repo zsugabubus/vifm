@@ -93,6 +93,8 @@ typedef enum
 #endif
 	/* New elements *must* be added here to keep values stored in existing
 	 * vifminfo files valid.  Don't forget to update SK_LAST below. */
+
+	SK_BY_NONE,          /* No order, as they appear */
 }
 SortingKey;
 
