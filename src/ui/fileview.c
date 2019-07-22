@@ -86,7 +86,7 @@ static void fill_column(view_t *view, int start_line, int top, int width,
 		int offset);
 static void calculate_table_conf(view_t *view, size_t *count, size_t *width);
 static int calculate_number_width(const view_t *view, int list_length,
-		int width);
+		int usable_width);
 static int count_digits(unsigned num);
 static int calculate_top_position(view_t *view, int top);
 static int get_line_color(const view_t *view, const dir_entry_t *entry);
@@ -294,8 +294,6 @@ draw_dir_list_only(view_t *view)
 
 	ui_view_erase(view);
 
-	draw_left_column(view);
-
 	visible_cells = view->window_cells;
 	if(fview_is_transposed(view) &&
 			view->column_count*(int)col_width < ui_view_available_width(view))
@@ -319,6 +317,7 @@ draw_dir_list_only(view_t *view)
 	}
 
 	draw_right_column(view);
+	draw_left_column(view);
 
 	view->curr_line = view->list_pos - view->top_line;
 
@@ -371,12 +370,12 @@ draw_right_column(view_t *view)
 {
 	view->displays_graphics = 0;
 
-	const int padding = (cfg.extra_padding ? 1 : 0);
-	const int offset = ui_view_left_reserved(view) + padding
-	                 + ui_view_available_width(view) + padding
-	                 + (cfg.inner_padding ? 1 : 0);
+	const int padding = (cfg.extra_padding || view->real_num_width > 0 ? 1 : 0);
+	const int offset = ui_view_left_reserved(view)
+	                 + ui_view_available_width(view)
+	                 + (cfg.inner_padding ? 2 : 0) - 1;
 
-	const int rcol_width = ui_view_right_reserved(view) - padding - 1;
+	const int rcol_width = ui_view_right_reserved(view);
 	if(rcol_width <= 0)
 	{
 		flist_free_cache(view, &view->right_column);
@@ -455,7 +454,6 @@ print_column(view_t *view, entries_t entries, const char current[],
 	{
 		top = entries.nentries - view->window_rows;
 	}
-
 	if(top < 0)
 	{
 		top = 0;
@@ -484,7 +482,7 @@ print_column(view_t *view, entries_t entries, const char current[],
 			.prefix_len = &prefix_len,
 		};
 
-		draw_cell(columns, &cdt, width, width - 1);
+		draw_cell(columns, &cdt, width, width);
 	}
 
 	fill_column(view, pos, top, number_width + width, offset);
@@ -494,8 +492,9 @@ print_column(view_t *view, entries_t entries, const char current[],
 static void
 fill_column(view_t *view, int start_line, int top, int width, int offset)
 {
-	char filler[width + (cfg.extra_padding ? 1 : 0) + 1/*nul*/];
-	memset(filler, ' ', sizeof(filler) - 1U);
+	/* return; */
+	char filler[width + (cfg.extra_padding || view->real_num_width > 0 ? 1 : 0) + 1/*nul*/];
+	memset(filler, 'O', sizeof(filler) - 1U);
 	filler[sizeof(filler) - 1U] = '\0';
 
 	char a_space[] = " ";
@@ -529,13 +528,15 @@ fill_column(view_t *view, int start_line, int top, int width, int offset)
 static void
 calculate_table_conf(view_t *view, size_t *count, size_t *width)
 {
+	const int avail_width = ui_view_available_width(view);
+
 	view->real_num_width = calculate_number_width(view, view->list_rows,
-			ui_view_available_width(view));
+			avail_width);
 
 	if(ui_view_displays_columns(view))
 	{
 		*count = 1;
-		*width = MAX(0, ui_view_available_width(view) - view->real_num_width);
+		*width = MAX(0, avail_width - view->real_num_width);
 	}
 	else
 	{
@@ -552,13 +553,13 @@ calculate_table_conf(view_t *view, size_t *count, size_t *width)
 /* Calculates real number of characters that should be allocated in view for
  * numbers column.  Returns the number. */
 static int
-calculate_number_width(const view_t *view, int list_length, int width)
+calculate_number_width(const view_t *view, int list_length, int usable_width)
 {
 	if(ui_view_displays_numbers(view))
 	{
 		const int digit_count = count_digits(list_length);
 		const int min = view->num_width; /* Includes space on the right. */
-		return MIN(MAX(digit_count, min - 1/*space*/), width);
+		return MIN(MAX(digit_count, min - 1/*space*/), usable_width);
 	}
 
 	return 0;
@@ -687,14 +688,14 @@ draw_cell(columns_t *columns, const column_data_t *cdt, size_t col_width,
 
 	if(cfg.extra_padding)
 	{
-		column_line_print(cdt, FILL_COLUMN_ID, " ", -1, AT_LEFT, " ");
+		/* column_line_print(cdt, FILL_COLUMN_ID, " ", -1, AT_LEFT, " "); */
 	}
 
 	columns_format_line(columns, cdt, MIN(col_width, width_left));
 
 	if(cfg.extra_padding && width_left >= col_width)
 	{
-		column_line_print(cdt, FILL_COLUMN_ID, " ", print_width, AT_LEFT, " ");
+		/* column_line_print(cdt, FILL_COLUMN_ID, " ", print_width, AT_LEFT, " "); */
 	}
 }
 
@@ -863,6 +864,7 @@ fview_draw_inactive_cursor(view_t *view)
 	draw_left_column(view);
 	draw_right_column(view);
 
+	/* Check if there is space for marker. */
 	if(!(cfg.extra_padding || view->real_num_width > 0))
 	{
 		return;
@@ -1087,7 +1089,7 @@ column_line_print(const void *data, int column_id, const char buf[],
 	dir_entry_t *entry = cdt->entry;
 
 	const int numbers_visible = (offset == 0 && cdt->number_width > 0);
-	const int padding = (cfg.extra_padding != 0 || cdt->number_width > 0);
+	const int padding = 0; /* (cfg.extra_padding != 0 || cdt->number_width > 0); */
 
 	const int primary = column_id == SK_BY_NAME
 	                 || column_id == SK_BY_INAME
@@ -1097,7 +1099,7 @@ column_line_print(const void *data, int column_id, const char buf[],
 
 	size_t extra_prefix = primary ? *cdt->prefix_len : 0U;
 
-	if(extra_prefix != 0U && align == AT_RIGHT)
+	if(0 && extra_prefix != 0U && align == AT_RIGHT)
 	{
 		/* Prefix length requires correction if left hand side of file name is
 		 * trimmed. */
@@ -1137,7 +1139,7 @@ column_line_print(const void *data, int column_id, const char buf[],
 
 	if(fentry_is_fake(entry))
 	{
-		memset(print_buf, '.', sizeof(print_buf) - 1U);
+		memset(print_buf, ' ', sizeof(print_buf) - 1U);
 		print_buf[sizeof(print_buf) - 1U] = '\0';
 	}
 	else
@@ -1153,7 +1155,7 @@ column_line_print(const void *data, int column_id, const char buf[],
 	}
 	wprinta(view->win, print_buf, &line_attrs, 0);
 
-	if(primary && view->matches != 0 && entry->search_match)
+	if(0 && primary && view->matches != 0 && entry->search_match)
 	{
 		highlight_search(view, entry, full_column, print_buf, trim_pos, align,
 				cdt->curr_line, final_offset, &line_attrs);

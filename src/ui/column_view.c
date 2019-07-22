@@ -69,7 +69,7 @@ static void mark_for_recalculation(columns_t *cols);
 static column_func get_column_func(int column_id);
 static AlignType decorate_output(const column_t *col, char buf[],
 		size_t buf_len, size_t max_line_width);
-static size_t calculate_max_width(const column_t *col, size_t len,
+static size_t calculate_max_width(const column_t *col, size_t width,
 		size_t max_line_width);
 static size_t calculate_start_pos(const column_t *col, const char buf[],
 		AlignType align);
@@ -293,9 +293,7 @@ columns_format_line(columns_t *cols, const void *data, size_t max_line_width)
 		 * character inside previous column. */
 		if(prev_col_end > cur_col_start)
 		{
-			const size_t prev_col_max_width = (cur_col_start > prev_col_start)
-			                                ? (cur_col_start - prev_col_start)
-			                                : 0UL;
+			const size_t prev_col_max_width = MAX(cur_col_start - prev_col_start, 0UL);
 			const size_t break_point = utf8_strsnlen(prev_col_buf,
 					prev_col_max_width);
 			prev_col_buf[break_point] = '\0';
@@ -327,45 +325,46 @@ static AlignType
 decorate_output(const column_t *col, char buf[], size_t buf_len,
 		size_t max_line_width)
 {
-	const size_t len = get_width_on_screen(buf);
-	const size_t max_col_width = calculate_max_width(col, len, max_line_width);
-	const int too_long = len > max_col_width;
+	const size_t width = get_width_on_screen(buf);
+	const size_t max_col_width = calculate_max_width(col, width, max_line_width);
+	const int overflow = width > max_col_width;
 	AlignType result;
 	const char *const ell = (col->info.cropping == CT_ELLIPSIS ? ellipsis : "");
 	char *ellipsed;
 
-	if(!too_long)
+	if(!overflow)
 	{
 		return (col->info.align == AT_RIGHT ? AT_RIGHT : AT_LEFT);
 	}
 
-	if(col->info.align == AT_LEFT ||
-			(col->info.align == AT_DYN && len <= max_col_width))
+	if(col->info.align == AT_LEFT)
 	{
 		ellipsed = right_ellipsis(buf, max_col_width, ell);
-		result = AT_LEFT;
+		assert(col->info.align == AT_LEFT && "Dunno what is AT_DYN2");
+		/* result = AT_LEFT; */
 	}
 	else
 	{
 		ellipsed = left_ellipsis(buf, max_col_width, ell);
-		result = AT_RIGHT;
+		/* result = AT_RIGHT; */
 	}
 
 	copy_str(buf, buf_len, ellipsed);
 	free(ellipsed);
 
-	return result;
+ret:
+	return col->info.align;
 }
 
 /* Calculates maximum width for outputting content of the col. */
 static size_t
-calculate_max_width(const column_t *col, size_t len, size_t max_line_width)
+calculate_max_width(const column_t *col, size_t width, size_t max_line_width)
 {
 	if(col->info.cropping == CT_NONE)
 	{
 		const size_t left_bound = (col->info.align == AT_LEFT) ? col->start : 0;
 		const size_t max_col_width = max_line_width - left_bound;
-		return MIN(len, max_col_width);
+		return MIN(width, max_col_width);
 	}
 	else
 	{
@@ -383,9 +382,9 @@ calculate_start_pos(const column_t *col, const char buf[], AlignType align)
 	}
 	else
 	{
-		const size_t end = col->start + col->width;
-		const size_t len = get_width_on_screen(buf);
-		return (end > len && align == AT_RIGHT) ? (end - len) : 0;
+		const size_t col_end = col->start + col->width;
+		const size_t width = get_width_on_screen(buf);
+		return (col_end > width && align == AT_RIGHT) ? (col_end - width) : 0;
 	}
 }
 

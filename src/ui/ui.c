@@ -2153,9 +2153,9 @@ ui_view_displays_columns(const view_t *view)
 int
 ui_view_available_width(const view_t *view)
 {
-	const int correction = (cfg.extra_padding ? -2 : view->real_num_width ? -1 : 0);
-	return view->window_cols + correction
-	     - ui_view_left_reserved(view) - ui_view_right_reserved(view);
+	return view->window_cols
+	     - ui_view_left_reserved(view)
+	     - ui_view_right_reserved(view);
 }
 
 int
