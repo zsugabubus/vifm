@@ -342,7 +342,7 @@ draw_left_column(view_t *view)
 
 	int number_width;
 	int lcol_width = ui_view_left_reserved(view)
-	               - (cfg.extra_padding ? 1 : 0)
+	               - (cfg.extra_padding || view->real_num_width > 0 ? 1 : 0)
 	               - (cfg.inner_padding ? 1 : 0);
 	if(lcol_width <= 0)
 	{
